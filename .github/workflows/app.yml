@@ -1,0 +1,58 @@
+name: App (EAS Update)
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Comprobar EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then echo "::error::Falta el secreto EXPO_TOKEN en el repo"; exit 1; fi
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - name: Crear el proyecto en Expo (solo la primera vez)
+        run: |
+          if ! grep -q '"projectId"' app.json; then
+            eas init --non-interactive --force
+            eas update:configure --platform all --non-interactive || true
+            git config user.name "nominas-bot"
+            git config user.email "nominas-bot@users.noreply.github.com"
+            git add app.json
+            git commit -m "App: proyecto de Expo creado" || true
+            git pull --rebase --autostash && git push || true
+          fi
+      - name: Canal main (para que el enlace del atajo abra siempre la última versión)
+        run: |
+          eas channel:view main --non-interactive > /dev/null 2>&1 || eas channel:create main --non-interactive || true
+          eas channel:edit main --branch main --non-interactive || true
+          eas channel:view main --non-interactive || true
+      - name: Publicar en EAS Update
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON: ${{ secrets.SUPABASE_ANON }}
+        run: eas update --branch main --message "${{ github.event.head_commit.message || 'Publicación manual' }}" --non-interactive
