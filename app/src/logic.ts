@@ -95,29 +95,59 @@ Reglas:
 - Si un dato no aparece, null. No inventes valores.`;
 
 export const promptCalendario = (quien: string) => `Te adjunto el calendario laboral de un policía local (calendario de turnos de la empresa) en PDF o foto. Extrae, día a día, lo que tiene ${quien ? `"${quien}"` : 'la persona del calendario (si hay varias, la que aparezca destacada o la primera)'}.
-Códigos: "M y T" o "MT" = turno de mañana y tarde (06-18). "T y N" o "TN" = turno de tarde y noche (18-06). R1, R2, R3 = un tercio de retén cada uno; R123 = retén completo. RD = servicio RED. Una casilla puede tener varios códigos.
+Códigos del calendario: "M y T" = turno de mañana y tarde (06-18). "T y N" = turno de tarde y noche (18-06). R1, R2, R3 = un tercio de retén cada uno; R123 = retén completo. RD = servicio RED.
 Colores: rojo = festivo, gris = fin de semana, amarillo = incidencia (baja), verde = vacaciones. Míralo como imagen: se lee mejor que el texto.
-Responde SOLO con un bloque de código JSON, sin explicaciones:
-{"meses":[{"mes":1-12,"anio":number,"dias":[{"dia":number,"turno":"MT"|"TN"|"","reten":string,"red":boolean,"horarioRed":string|null,"festivo":boolean,"baja":boolean,"vacaciones":boolean,"texto":string}]}],"notas":string}
-Reglas:
-- Todos los meses completos que aparezcan, con un elemento por día.
-- "reten": los tercios tal como aparecen ("R1", "R13", "R123") o "".
-- "horarioRed": solo si el horario del RED está escrito (por ejemplo "18-06"). Si no, null. No lo supongas.
-- "festivo" solo si la casilla es roja, no por ser fin de semana.
-- "notas": una frase si algo no se lee bien, o "".`;
 
-/** Saca el primer objeto JSON de un texto (con o sin ```json). */
+Responde SOLO con JSON compacto, en una línea por mes, sin explicaciones. Cada día es un texto corto con estas marcas separadas por espacios:
+MT (turno M y T), TN (turno T y N), R1 / R2 / R3 / R12 / R13 / R23 / R123 (tercios de retén), RD (RED; si el horario está escrito, pégalo: RD18-06), F (casilla roja, festivo), B (baja, amarillo), V (vacaciones, verde). Día sin nada: "".
+Formato:
+{"meses":[
+{"m":10,"a":2026,"d":["MT","TN","","R123 B","","MT","TN F",...un texto por cada día del mes...]},
+{"m":11,"a":2026,"d":[...]}
+],"notas":""}
+Reglas: todos los meses que aparezcan, cada uno con tantos textos como días tiene. "F" solo si la casilla es roja, no por ser fin de semana. No supongas horarios de RED que no estén escritos. En "notas", una frase si algo no se lee bien.`;
+
+/** Arregla un JSON cortado (respuesta incompleta): lo recorta al último elemento completo y cierra lo que quede abierto. */
+function repararJSON(c: string): any | null {
+  let ultimo = -1; const pila: string[] = []; let enStr = false, esc = false; const cortes: { i: number; pila: string }[] = [];
+  for (let i = 0; i < c.length; i++) {
+    const ch = c[i];
+    if (enStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') enStr = false; continue; }
+    if (ch === '"') enStr = true;
+    else if (ch === '{' || ch === '[') pila.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') { pila.pop(); ultimo = i; cortes.push({ i, pila: pila.slice().reverse().join('') }); }
+  }
+  for (let k = cortes.length - 1; k >= 0 && k >= cortes.length - 400; k--) {
+    try { return JSON.parse(c.slice(0, cortes[k].i + 1).replace(/,\s*$/, '') + cortes[k].pila); } catch {}
+  }
+  return ultimo < 0 ? null : null;
+}
+
+/** Saca el primer objeto JSON de un texto (con o sin ```json), aunque venga cortado. */
 export function sacarJSON(texto: string): any | null {
-  const t = String(texto || '');
-  const bloque = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const t = String(texto || '').replace(/[“”]/g, '"');
+  const bloque = t.match(/```(?:json)?\s*([\s\S]*?)(```|$)/);
   const cands = [bloque?.[1], t];
   for (const c of cands) {
     if (!c) continue;
     const a = c.indexOf('{'), b = c.lastIndexOf('}');
-    if (a < 0 || b <= a) continue;
-    try { return JSON.parse(c.slice(a, b + 1)); } catch {}
+    if (a < 0) continue;
+    if (b > a) { try { return JSON.parse(c.slice(a, b + 1)); } catch {} }
+    const r = repararJSON(c.slice(a)); if (r) return r;
   }
   return null;
+}
+
+/** Convierte un día en formato corto ("TN R1 F", "RD18-06") al formato completo. */
+function diaDeTexto(dia: number, txt: any) {
+  if (txt && typeof txt === 'object') return { ...txt, dia: txt.dia ?? dia };
+  const u = String(txt || '').toUpperCase();
+  const tok = u.split(/[\s,;]+/).filter(Boolean);
+  const rd = tok.find((x) => /^RD/.test(x));
+  const ret = tok.find((x) => /^R[123]+$/.test(x)) || '';
+  return { dia, turno: tok.includes('MT') ? 'MT' : tok.includes('TN') ? 'TN' : '', reten: ret, red: !!rd,
+    horarioRed: rd && parseRange(rd.slice(2)) ? parseRange(rd.slice(2))!.txt : null,
+    festivo: tok.includes('F'), baja: tok.includes('B'), vacaciones: tok.includes('V'), texto: String(txt || '') };
 }
 
 export function nominasDeRespuesta(out: any): Nomina[] {
@@ -137,8 +167,10 @@ export function nominasDeRespuesta(out: any): Nomina[] {
 
 export function calendariosDeRespuesta(out: any): { ym: string; doc: any }[] {
   const meses: any[] = Array.isArray(out?.meses) ? out.meses : [];
-  return meses.filter((m) => m && m.mes && m.anio && Array.isArray(m.dias) && m.dias.length)
-    .map((m) => ({ ym: ymOf(m.anio, m.mes), doc: { dias: m.dias, notas: out.notas || '', subida: new Date().toISOString() } }));
+  return meses.map((m) => ({ mes: m?.mes ?? m?.m, anio: m?.anio ?? m?.a, dias: m?.dias ?? m?.d }))
+    .filter((m) => m.mes && m.anio && Array.isArray(m.dias) && m.dias.length)
+    .map((m) => ({ ym: ymOf(m.anio, m.mes), doc: { dias: m.dias.map((x: any, i: number) => diaDeTexto(i + 1, x)), notas: out.notas || '', subida: new Date().toISOString(),
+      incompleto: m.dias.length < daysIn(ymOf(m.anio, m.mes)) } }));
 }
 
 /* ---------- iCal (direcciones secretas de Google Calendar) ---------- */

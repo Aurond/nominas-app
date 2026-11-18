@@ -34,9 +34,15 @@ export function LeerConClaude({ tipo, visible, onClose, onListo }: { tipo: 'nomi
     } else {
       const cs = calendariosDeRespuesta(out);
       if (!cs.length) return setMsg({ t: 'La respuesta no trae ningún mes del calendario. Revisa que adjuntaste el calendario en Claude.' });
-      for (const c of cs) guardar(`cua-${c.ym}`, c.doc);
+      for (const c of cs) {
+        const prev = docs[`cua-${c.ym}`];
+        if (c.doc.incompleto && prev?.dias?.length > c.doc.dias.length) { c.doc.dias = [...c.doc.dias, ...prev.dias.slice(c.doc.dias.length)]; c.doc.incompleto = false; }
+        guardar(`cua-${c.ym}`, c.doc);
+      }
       const yms = cs.map((c) => c.ym).sort();
-      setMsg({ ok: true, t: `Calendario guardado: ${yms.length > 1 ? `de ${ymLabel(yms[0])} a ${ymLabel(yms[yms.length - 1])}` : ymLabel(yms[0])}.` }); setTexto('');
+      const cortados = cs.filter((c) => c.doc.incompleto).map((c) => ymLabel(c.ym));
+      setMsg({ ok: true, t: `Calendario guardado: ${yms.length > 1 ? `de ${ymLabel(yms[0])} a ${ymLabel(yms[yms.length - 1])}` : ymLabel(yms[0])}.`
+        + (cortados.length ? ` La respuesta venía cortada: a ${cortados.join(', ')} le faltan días. Pide en Claude «continúa con ${cortados[0]}» y pega lo que conteste.` : '') }); setTexto('');
       onListo?.(yms);
     }
   };
