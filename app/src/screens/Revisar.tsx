@@ -145,7 +145,7 @@ export function Revisar({ irA }: { irA: (tab: string) => void }) {
         <Chips opciones={meses.map((m) => ({ v: m, l: `${cap(MES3[+m.slice(5) - 1])} ${m.slice(0, 4)}${docs['cua-' + m] ? ' •' : ''}` }))} valor={ym} onChange={setYm} />
         <Fila>
           <Txt small>{`Se cobra en la nómina de ${ymLabel(payYm)}`}</Txt>
-          {noms.length ? <Pill tipo="bien">Nómina subida</Pill> : <Pill tipo="mal">Falta la nómina</Pill>}
+          {noms.length ? <Pill tipo="bien">{`Nómina de ${ymLabel(payYm).split(' ')[0]} subida`}</Pill> : <Pill tipo="mal">{`Falta la nómina de ${ymLabel(payYm).split(' ')[0]}`}</Pill>}
         </Fila>
         <Txt small muted>• = tiene calendario de la empresa</Txt>
       </Card>
