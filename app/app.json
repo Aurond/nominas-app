@@ -24,6 +24,15 @@
     "plugins": [
       "expo-font",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1ff2af4a-a0e2-42b7-9c2f-13e4d868acc9"
+      }
+    },
+    "owner": "aurond",
+    "updates": {
+      "url": "https://u.expo.dev/1ff2af4a-a0e2-42b7-9c2f-13e4d868acc9"
+    }
   }
 }
