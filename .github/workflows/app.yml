@@ -55,4 +55,5 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON: ${{ secrets.SUPABASE_ANON }}
-        run: eas update --branch main --message "${{ github.event.head_commit.message || 'Publicación manual' }}" --non-interactive
+          MENSAJE: ${{ github.event.head_commit.message || 'Publicación manual' }}
+        run: eas update --branch main --message "$(printf '%s' "$MENSAJE" | head -n 1)" --non-interactive
